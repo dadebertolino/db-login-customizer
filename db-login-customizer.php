@@ -3,7 +3,7 @@
  * Plugin Name: DB Login Customizer
  * Plugin URI: https://github.com/dadebertolino/db-login-customizer
  * Description: Personalizza la pagina di login e logout di WordPress con i colori e il logo del tuo sito. Niente fronzoli, niente dipendenze.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Davide Bertolino
  * Author URI: https://www.davidebertolino.it
  * License: GPL v2 or later
@@ -15,7 +15,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('DBLC_VERSION', '1.0.0');
+define('DBLC_VERSION', '1.1.0');
 define('DBLC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DBLC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DBLC_PLUGIN_BASENAME', plugin_basename(__FILE__));
@@ -58,6 +58,9 @@ final class DB_Login_Customizer {
 
         // AJAX preview
         add_action('wp_ajax_dblc_preview_data', [$this, 'ajax_preview_data']);
+
+        // AJAX: detect theme styles
+        add_action('wp_ajax_dblc_detect_theme', [$this, 'ajax_detect_theme']);
     }
 
     /**
@@ -84,6 +87,7 @@ final class DB_Login_Customizer {
             'dblc_login_message'     => '',
             'dblc_hide_language_switcher' => 0,
             'dblc_hide_back_to_blog' => 0,
+            'dblc_sync_theme'        => 0,
         ];
     }
 
@@ -189,22 +193,288 @@ final class DB_Login_Customizer {
         include DBLC_PLUGIN_DIR . 'templates/admin-page.php';
     }
 
+    /* ─── AJAX Preview Data ─── */
+
+    public function ajax_preview_data() {
+        check_ajax_referer('dblc_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error();
+        }
+        wp_send_json_success(['login_url' => wp_login_url()]);
+    }
+
+    /* ─── Theme Detection ─── */
+
+    /**
+     * Extract styles from the active theme (theme.json, Customizer, site icon)
+     * Returns an associative array with detected values
+     */
+    public static function get_theme_styles() {
+        $styles = [
+            'bg_color'          => '',
+            'form_bg_color'     => '',
+            'label_color'       => '',
+            'btn_bg_color'      => '',
+            'btn_text_color'    => '',
+            'btn_border_radius' => '',
+            'link_color'        => '',
+            'font_family'       => '',
+            'font_url'          => '',
+            'logo_url'          => '',
+            'theme_name'        => wp_get_theme()->get('Name'),
+            'has_theme_json'    => false,
+        ];
+
+        // 1. Try theme.json via Global Settings API (WP 5.9+)
+        if (function_exists('wp_get_global_settings')) {
+            $styles['has_theme_json'] = true;
+            $settings = wp_get_global_settings();
+
+            // Colors from palette
+            $palette = $settings['color']['palette']['theme'] ?? [];
+            if (empty($palette)) {
+                $palette = $settings['color']['palette']['default'] ?? [];
+            }
+
+            $color_map = [];
+            foreach ($palette as $c) {
+                $color_map[$c['slug']] = $c['color'];
+            }
+
+            // Try to find primary/accent color for buttons
+            $primary_slugs = ['primary', 'accent', 'vivid-cyan-blue', 'luminous-vivid-amber', 'contrast'];
+            foreach ($primary_slugs as $slug) {
+                if (isset($color_map[$slug])) {
+                    $styles['btn_bg_color'] = $color_map[$slug];
+                    $styles['link_color'] = $color_map[$slug];
+                    break;
+                }
+            }
+
+            // If no named primary, take the first non-white, non-black color
+            if (empty($styles['btn_bg_color']) && !empty($color_map)) {
+                foreach ($color_map as $slug => $hex) {
+                    $hex_clean = strtolower(ltrim($hex, '#'));
+                    if ($hex_clean !== 'ffffff' && $hex_clean !== '000000' && $hex_clean !== 'fff' && $hex_clean !== '000') {
+                        $styles['btn_bg_color'] = $hex;
+                        $styles['link_color'] = $hex;
+                        break;
+                    }
+                }
+            }
+
+            // Background color
+            $bg_slugs = ['base', 'background', 'white'];
+            foreach ($bg_slugs as $slug) {
+                if (isset($color_map[$slug])) {
+                    $styles['bg_color'] = $color_map[$slug];
+                    $styles['form_bg_color'] = $color_map[$slug];
+                    break;
+                }
+            }
+
+            // Text/label color
+            $text_slugs = ['contrast', 'foreground', 'black'];
+            foreach ($text_slugs as $slug) {
+                if (isset($color_map[$slug])) {
+                    $styles['label_color'] = $color_map[$slug];
+                    break;
+                }
+            }
+
+            // Button text color — try to find a light color
+            if (!empty($styles['bg_color'])) {
+                $styles['btn_text_color'] = $styles['bg_color'];
+            }
+            if (empty($styles['btn_text_color'])) {
+                $styles['btn_text_color'] = '#ffffff';
+            }
+
+            // Global styles for background/text (more specific)
+            if (function_exists('wp_get_global_styles')) {
+                $global_styles = wp_get_global_styles();
+
+                if (!empty($global_styles['color']['background'])) {
+                    $bg = $global_styles['color']['background'];
+                    $styles['bg_color'] = self::resolve_preset_color($bg, $color_map);
+                }
+                if (!empty($global_styles['color']['text'])) {
+                    $text = $global_styles['color']['text'];
+                    $styles['label_color'] = self::resolve_preset_color($text, $color_map);
+                }
+
+                // Button styles from elements
+                if (!empty($global_styles['elements']['button']['color']['background'])) {
+                    $btn = $global_styles['elements']['button']['color']['background'];
+                    $styles['btn_bg_color'] = self::resolve_preset_color($btn, $color_map);
+                }
+                if (!empty($global_styles['elements']['button']['color']['text'])) {
+                    $btn_text = $global_styles['elements']['button']['color']['text'];
+                    $styles['btn_text_color'] = self::resolve_preset_color($btn_text, $color_map);
+                }
+
+                // Link color
+                if (!empty($global_styles['elements']['link']['color']['text'])) {
+                    $link = $global_styles['elements']['link']['color']['text'];
+                    $styles['link_color'] = self::resolve_preset_color($link, $color_map);
+                }
+
+                // Border radius from button
+                if (!empty($global_styles['elements']['button']['border']['radius'])) {
+                    $radius = $global_styles['elements']['button']['border']['radius'];
+                    $styles['btn_border_radius'] = intval($radius);
+                }
+            }
+
+            // Typography
+            $font_families = $settings['typography']['fontFamilies']['theme'] ?? [];
+            if (!empty($font_families)) {
+                $heading_font = null;
+                $body_font = null;
+                foreach ($font_families as $ff) {
+                    $slug = $ff['slug'] ?? '';
+                    if (in_array($slug, ['heading', 'headings'])) {
+                        $heading_font = $ff;
+                    } elseif (in_array($slug, ['body', 'primary', 'system'])) {
+                        $body_font = $ff;
+                    }
+                }
+                // Use heading font if available, otherwise body, otherwise first
+                $chosen = $heading_font ?: $body_font ?: $font_families[0];
+                if (!empty($chosen['fontFamily'])) {
+                    $styles['font_family'] = $chosen['fontFamily'];
+                }
+                // Google font URL if fontFace available
+                if (!empty($chosen['fontFace'])) {
+                    $families = [];
+                    foreach ($chosen['fontFace'] as $face) {
+                        $weight = $face['fontWeight'] ?? '400';
+                        $family = str_replace(' ', '+', $chosen['name'] ?? '');
+                        if (!empty($family)) {
+                            $families[$family][] = $weight;
+                        }
+                    }
+                    if (!empty($families)) {
+                        $parts = [];
+                        foreach ($families as $name => $weights) {
+                            $parts[] = $name . ':wght@' . implode(';', array_unique($weights));
+                        }
+                        $styles['font_url'] = 'https://fonts.googleapis.com/css2?family=' . implode('&family=', $parts) . '&display=swap';
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: Customizer colors (classic themes)
+        if (empty($styles['bg_color'])) {
+            $bg = get_background_color();
+            if ($bg) {
+                $styles['bg_color'] = '#' . ltrim($bg, '#');
+            }
+        }
+
+        // 3. Site icon as logo fallback
+        $site_icon_id = get_option('site_icon');
+        if ($site_icon_id) {
+            $icon_url = wp_get_attachment_image_url($site_icon_id, 'full');
+            if ($icon_url) {
+                $styles['logo_url'] = $icon_url;
+                $styles['logo_id'] = $site_icon_id;
+            }
+        }
+
+        // 4. Custom logo (from Customizer)
+        $custom_logo_id = get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $logo_url = wp_get_attachment_image_url($custom_logo_id, 'medium');
+            if ($logo_url) {
+                $styles['logo_url'] = $logo_url;
+                $styles['logo_id'] = $custom_logo_id;
+            }
+        }
+
+        return $styles;
+    }
+
+    /**
+     * Resolve preset:color|slug references to actual hex
+     */
+    private static function resolve_preset_color($value, $color_map) {
+        if (preg_match('/var\(--wp--preset--color--([^)]+)\)/', $value, $m)) {
+            $slug = $m[1];
+            return $color_map[$slug] ?? $value;
+        }
+        return $value;
+    }
+
+    /**
+     * AJAX: detect theme styles and return them
+     */
+    public function ajax_detect_theme() {
+        check_ajax_referer('dblc_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error();
+        }
+        wp_send_json_success(self::get_theme_styles());
+    }
+
     /* ─── Login Page Styles ─── */
 
     public function login_styles() {
+        $sync = intval($this->get_option('dblc_sync_theme'));
+
+        // If sync is on, get theme values as base, then allow manual overrides
+        $theme = $sync ? self::get_theme_styles() : [];
+
         $logo_id    = $this->get_option('dblc_logo_id');
         $logo_width = intval($this->get_option('dblc_logo_width'));
+
+        // If sync on and no manual logo, use theme logo
+        if ($sync && empty($logo_id) && !empty($theme['logo_id'])) {
+            $logo_id = $theme['logo_id'];
+        }
+
         $bg_color   = $this->get_option('dblc_bg_color');
+        if ($sync && $bg_color === '#f0f0f1' && !empty($theme['bg_color'])) {
+            $bg_color = $theme['bg_color'];
+        }
+
         $bg_image_id = $this->get_option('dblc_bg_image_id');
         $bg_size    = $this->get_option('dblc_bg_size');
+
         $form_bg    = $this->get_option('dblc_form_bg_color');
+        if ($sync && $form_bg === '#ffffff' && !empty($theme['form_bg_color'])) {
+            $form_bg = $theme['form_bg_color'];
+        }
+
         $form_radius = intval($this->get_option('dblc_form_border_radius'));
         $form_shadow = intval($this->get_option('dblc_form_shadow'));
+
         $label_color = $this->get_option('dblc_label_color');
+        if ($sync && $label_color === '#1e1e1e' && !empty($theme['label_color'])) {
+            $label_color = $theme['label_color'];
+        }
+
         $btn_bg     = $this->get_option('dblc_btn_bg_color');
+        if ($sync && $btn_bg === '#2271b1' && !empty($theme['btn_bg_color'])) {
+            $btn_bg = $theme['btn_bg_color'];
+        }
+
         $btn_text   = $this->get_option('dblc_btn_text_color');
+        if ($sync && $btn_text === '#ffffff' && !empty($theme['btn_text_color'])) {
+            $btn_text = $theme['btn_text_color'];
+        }
+
         $btn_radius = intval($this->get_option('dblc_btn_border_radius'));
+        if ($sync && $btn_radius === 4 && !empty($theme['btn_border_radius'])) {
+            $btn_radius = intval($theme['btn_border_radius']);
+        }
+
         $link_color = $this->get_option('dblc_link_color');
+        if ($sync && $link_color === '#2271b1' && !empty($theme['link_color'])) {
+            $link_color = $theme['link_color'];
+        }
+
         $custom_css = $this->get_option('dblc_custom_css');
         $hide_lang  = intval($this->get_option('dblc_hide_language_switcher'));
         $hide_back  = intval($this->get_option('dblc_hide_back_to_blog'));
@@ -220,6 +490,19 @@ final class DB_Login_Customizer {
         }
 
         $css = '';
+
+        // Google Font from theme
+        $font_family = '';
+        if ($sync && !empty($theme['font_family'])) {
+            $font_family = $theme['font_family'];
+            // Load font
+            if (!empty($theme['font_url'])) {
+                echo '<link rel="preconnect" href="https://fonts.googleapis.com">';
+                echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
+                echo '<link rel="stylesheet" href="' . esc_url($theme['font_url']) . '">';
+            }
+            $css .= "body.login, .login label, .login input, .login button { font-family: {$font_family}; }";
+        }
 
         // Background
         $css .= "body.login { background-color: {$bg_color}; }";
@@ -287,7 +570,6 @@ final class DB_Login_Customizer {
     /* ─── Login Footer Scripts ─── */
 
     public function login_footer_scripts() {
-        // Add smooth transitions
         echo '<style>.login input, .login a, .wp-core-ui .button-primary { transition: all 0.2s ease; }</style>';
     }
 
@@ -306,7 +588,6 @@ final class DB_Login_Customizer {
     public function custom_login_redirect($redirect_to, $requested_redirect_to, $user) {
         $custom = $this->get_option('dblc_login_redirect');
         if (!empty($custom) && !is_wp_error($user)) {
-            // Don't override explicit redirects (e.g. from ?redirect_to=)
             if (empty($requested_redirect_to) || $requested_redirect_to === admin_url()) {
                 return esc_url($custom);
             }
@@ -320,16 +601,6 @@ final class DB_Login_Customizer {
             return esc_url($custom);
         }
         return $redirect_to;
-    }
-
-    /* ─── AJAX Preview Data ─── */
-
-    public function ajax_preview_data() {
-        check_ajax_referer('dblc_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error();
-        }
-        wp_send_json_success(['login_url' => wp_login_url()]);
     }
 
     /* ─── Activation ─── */

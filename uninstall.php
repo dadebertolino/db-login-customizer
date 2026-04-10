@@ -26,6 +26,7 @@ $options = [
     'dblc_login_message',
     'dblc_hide_language_switcher',
     'dblc_hide_back_to_blog',
+    'dblc_sync_theme',
 ];
 
 foreach ($options as $option) {

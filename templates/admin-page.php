@@ -30,6 +30,35 @@ if ($opts['dblc_bg_image_id']) {
             <form method="post" action="options.php" id="dblc-settings-form">
                 <?php settings_fields('dblc_settings'); ?>
 
+                <!-- Sincronizzazione tema -->
+                <div class="dblc-section dblc-section-theme">
+                    <h2><?php _e('Sincronizzazione tema', 'db-login-customizer'); ?></h2>
+                    <table class="form-table" role="presentation">
+                        <tr>
+                            <th scope="row"><?php _e('Usa stile del tema', 'db-login-customizer'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="dblc_sync_theme" id="dblc_sync_theme" value="1" <?php checked($opts['dblc_sync_theme'], 1); ?>>
+                                    <?php _e('Sincronizza colori, font e logo dal tema attivo', 'db-login-customizer'); ?>
+                                </label>
+                                <p class="description"><?php _e('Legge palette colori, tipografia e logo dal tema (via theme.json o Customizer). I valori manuali sovrascrivono quelli del tema.', 'db-login-customizer'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                    <div id="dblc-theme-preview" style="display:none;">
+                        <div class="dblc-theme-detected">
+                            <h3><?php _e('Valori rilevati dal tema', 'db-login-customizer'); ?></h3>
+                            <div id="dblc-theme-info"></div>
+                            <p>
+                                <button type="button" class="button" id="dblc-apply-theme">
+                                    <?php _e('Applica ai campi', 'db-login-customizer'); ?>
+                                </button>
+                                <span class="description"><?php _e('Copia i valori del tema nei campi sottostanti per personalizzarli ulteriormente.', 'db-login-customizer'); ?></span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Logo -->
                 <div class="dblc-section">
                     <h2><?php _e('Logo', 'db-login-customizer'); ?></h2>

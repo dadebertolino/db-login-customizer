@@ -2,7 +2,7 @@
 
 Personalizza la pagina di login e logout di WordPress con il tuo brand. Niente dipendenze, niente fronzoli.
 
-**Versione:** 1.0.0  
+**Versione:** 1.1.0  
 **Autore:** [Davide Bertolino](https://www.davidebertolino.it)  
 **Licenza:** GPL v2 or later  
 **Richiede:** WordPress 5.8+ · PHP 7.4+  
@@ -16,7 +16,8 @@ Sostituisce l'aspetto predefinito di `wp-login.php` con i colori, il logo e lo s
 
 ### Funzionalità
 
-- **Logo personalizzato** — carica il tuo logo dalla Media Library, sostituisce il logo WordPress
+- **Sincronizzazione tema** — legge automaticamente colori, font, border radius e logo dal tema attivo (via theme.json, Global Styles, Customizer). Un checkbox e la pagina di login si adatta al tuo brand
+- **Logo personalizzato** — carica il tuo logo dalla Media Library, sostituisce il logo WordPress. Con sync attivo, usa il logo del tema/sito se non ne hai caricato uno manuale
 - **Colore di sfondo** — scegli un colore o carica un'immagine di sfondo (cover, contain, auto)
 - **Stile form** — colore sfondo, border radius, ombra on/off
 - **Colori** — bottone, testo bottone, etichette, link
@@ -51,6 +52,7 @@ La pagina di impostazioni è in **Impostazioni → Login Customizer**. Ogni sezi
 
 | Sezione | Controlli |
 |---------|-----------|
+| Sincronizzazione tema | Checkbox sync + anteprima valori rilevati + bottone "Applica ai campi" |
 | Logo | Immagine + larghezza |
 | Sfondo | Colore + immagine + dimensione |
 | Form | Sfondo + border radius + ombra |
@@ -100,6 +102,9 @@ db-login-customizer/
 
 - Tutte le personalizzazioni sono salvate in `wp_options` con prefisso `dblc_`
 - Lo stile è iniettato via `login_enqueue_scripts` come `<style>` inline — nessun file CSS esterno sulla pagina di login
+- La sincronizzazione tema legge da: `wp_get_global_settings()` (palette, font), `wp_get_global_styles()` (colori elementi, bottoni, link), `get_theme_mod('custom_logo')`, `get_option('site_icon')`, `get_background_color()`
+- I font Google del tema vengono caricati con `<link>` preconnect + stylesheet
+- I valori manuali hanno sempre priorità: il sync si applica solo ai campi lasciati ai valori predefiniti
 - Il redirect post-login non sovrascrive redirect espliciti (`?redirect_to=`)
 - L'uninstall rimuove tutte le opzioni dal database
 - Nonce su tutti i form, capability check `manage_options`
@@ -108,6 +113,14 @@ db-login-customizer/
 ---
 
 ## Changelog
+
+### 1.1.0
+- 🆕 Sincronizzazione tema: legge colori, font, border radius e logo dal tema attivo
+- 🆕 Supporto theme.json (block themes), Global Styles, Customizer e site icon
+- 🆕 Anteprima valori rilevati dal tema nella pagina impostazioni
+- 🆕 Bottone "Applica ai campi" per copiare i valori del tema nei color picker
+- 🆕 Font Google del tema caricati sulla pagina di login
+- I valori manuali sovrascrivono sempre quelli del tema
 
 ### 1.0.0
 - Release iniziale
