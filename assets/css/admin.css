@@ -1,0 +1,107 @@
+/* DB Login Customizer — Admin Styles */
+
+.dblc-wrap {
+    max-width: 1200px;
+}
+
+.dblc-layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    margin-top: 15px;
+}
+
+.dblc-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.dblc-sidebar {
+    width: 260px;
+    flex-shrink: 0;
+}
+
+.dblc-section {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 0 20px 15px;
+    margin-bottom: 15px;
+}
+
+.dblc-section h2 {
+    font-size: 14px;
+    font-weight: 600;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 8px;
+    margin-top: 15px;
+}
+
+.dblc-section .form-table th {
+    width: 180px;
+    padding-top: 15px;
+    padding-bottom: 10px;
+}
+
+.dblc-section .form-table td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+/* Media upload field */
+.dblc-media-preview {
+    margin-bottom: 8px;
+}
+
+.dblc-media-preview img {
+    max-width: 200px;
+    max-height: 100px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    display: block;
+}
+
+.dblc-media-field .button {
+    margin-right: 5px;
+}
+
+/* Sidebar */
+.dblc-sidebar-box {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.dblc-sidebar-box h3 {
+    margin-top: 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.dblc-sidebar-box code {
+    background: #f0f0f1;
+    padding: 8px;
+    border-radius: 3px;
+}
+
+/* Responsive */
+@media (max-width: 960px) {
+    .dblc-layout {
+        flex-direction: column;
+    }
+    .dblc-sidebar {
+        width: 100%;
+    }
+}
+
+/* Focus visible */
+.dblc-wrap a:focus,
+.dblc-wrap input:focus,
+.dblc-wrap select:focus,
+.dblc-wrap textarea:focus,
+.dblc-wrap button:focus {
+    outline: 3px solid #2271b1;
+    outline-offset: 1px;
+}
