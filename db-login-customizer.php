@@ -3,7 +3,7 @@
  * Plugin Name: DB Login Customizer
  * Plugin URI: https://github.com/dadebertolino/db-login-customizer
  * Description: Personalizza la pagina di login e logout di WordPress con i colori e il logo del tuo sito. Niente fronzoli, niente dipendenze.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Davide Bertolino
  * Author URI: https://www.davidebertolino.it
  * License: GPL v2 or later
@@ -13,12 +13,31 @@
  * Requires PHP: 7.4
  */
 
+/**
+ * Privacy capabilities (per references/PRIVACY-INTEGRATION.md):
+ *  - Personal data:        NO — solo impostazioni grafiche in wp_options (dblc_*)
+ *  - Third-party scripts:  NO — nessuna richiesta a terzi: dalla 1.2.0 i font del
+ *                           tema sono serviti dai file locali del tema (fontFace di
+ *                           theme.json), mai da fonts.googleapis.com / gstatic.com
+ *  - User consent:         NO
+ *  - DSAR-aware:           NO — nessun dato personale da esportare o cancellare
+ *  - Hub-aware:            NO — nessun trattamento da dichiarare
+ */
+
 if (!defined('ABSPATH')) exit;
 
-define('DBLC_VERSION', '1.1.0');
+define('DBLC_VERSION', '1.2.0');
 define('DBLC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('DBLC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('DBLC_PLUGIN_BASENAME', plugin_basename(__FILE__));
+
+/**
+ * GitHub Auto-Updater
+ */
+require_once DBLC_PLUGIN_DIR . 'inc/class-updater.php';
+if (class_exists('DB_GitHub_Updater')) {
+    new DB_GitHub_Updater(__FILE__, 'dadebertolino', 'db-login-customizer');
+}
 
 /**
  * Main plugin class — singleton
@@ -159,9 +178,16 @@ final class DB_Login_Customizer {
         wp_enqueue_script('wp-color-picker');
 
         wp_enqueue_style(
+            'db-admin-ui',
+            DBLC_PLUGIN_URL . 'assets/css/db-admin-ui.css',
+            [],
+            DBLC_VERSION
+        );
+
+        wp_enqueue_style(
             'dblc-admin',
             DBLC_PLUGIN_URL . 'assets/css/admin.css',
-            [],
+            ['db-admin-ui'],
             DBLC_VERSION
         );
 
@@ -219,7 +245,7 @@ final class DB_Login_Customizer {
             'btn_border_radius' => '',
             'link_color'        => '',
             'font_family'       => '',
-            'font_url'          => '',
+            'font_face_css'     => '',
             'logo_url'          => '',
             'theme_name'        => wp_get_theme()->get('Name'),
             'has_theme_json'    => false,
@@ -344,23 +370,10 @@ final class DB_Login_Customizer {
                 if (!empty($chosen['fontFamily'])) {
                     $styles['font_family'] = $chosen['fontFamily'];
                 }
-                // Google font URL if fontFace available
-                if (!empty($chosen['fontFace'])) {
-                    $families = [];
-                    foreach ($chosen['fontFace'] as $face) {
-                        $weight = $face['fontWeight'] ?? '400';
-                        $family = str_replace(' ', '+', $chosen['name'] ?? '');
-                        if (!empty($family)) {
-                            $families[$family][] = $weight;
-                        }
-                    }
-                    if (!empty($families)) {
-                        $parts = [];
-                        foreach ($families as $name => $weights) {
-                            $parts[] = $name . ':wght@' . implode(';', array_unique($weights));
-                        }
-                        $styles['font_url'] = 'https://fonts.googleapis.com/css2?family=' . implode('&family=', $parts) . '&display=swap';
-                    }
+                // Font files declared by the theme (fontFace), served from the
+                // site itself: no request to Google Fonts or other third parties.
+                if (!empty($chosen['fontFace']) && is_array($chosen['fontFace'])) {
+                    $styles['font_face_css'] = self::build_font_face_css($chosen['fontFace']);
                 }
             }
         }
@@ -394,6 +407,100 @@ final class DB_Login_Customizer {
         }
 
         return $styles;
+    }
+
+    /**
+     * Build @font-face rules from theme.json fontFace entries.
+     *
+     * Only sources hosted on the site are kept (theme files, uploads,
+     * site-relative paths): a remote src (Google Fonts, other CDNs) is
+     * dropped, so the login page never contacts third parties.
+     */
+    private static function build_font_face_css($faces) {
+        $css = '';
+        foreach ($faces as $face) {
+            if (!is_array($face) || empty($face['fontFamily']) || empty($face['src'])) {
+                continue;
+            }
+            $sources = [];
+            foreach ((array) $face['src'] as $src) {
+                $url = self::resolve_font_src($src);
+                if ($url === '') {
+                    continue;
+                }
+                $format = self::font_format($url);
+                $sources[] = "url('" . str_replace("'", '%27', esc_url_raw($url)) . "')" . ($format ? " format('{$format}')" : '');
+            }
+            if (empty($sources)) {
+                continue;
+            }
+            $rule  = 'font-family:' . self::css_value($face['fontFamily']) . ';';
+            $rule .= 'font-style:' . self::css_value($face['fontStyle'] ?? 'normal') . ';';
+            $rule .= 'font-weight:' . self::css_value($face['fontWeight'] ?? '400') . ';';
+            $rule .= 'font-display:' . self::css_value($face['fontDisplay'] ?? 'swap') . ';';
+            if (!empty($face['fontStretch'])) {
+                $rule .= 'font-stretch:' . self::css_value($face['fontStretch']) . ';';
+            }
+            if (!empty($face['unicodeRange'])) {
+                $rule .= 'unicode-range:' . self::css_value($face['unicodeRange']) . ';';
+            }
+            $rule .= 'src:' . implode(',', $sources) . ';';
+            $css  .= '@font-face{' . $rule . '}';
+        }
+        return $css;
+    }
+
+    /**
+     * Resolve a theme.json font src to a URL on this site, '' if remote.
+     */
+    private static function resolve_font_src($src) {
+        $src = trim((string) $src);
+        if ($src === '') {
+            return '';
+        }
+        // theme.json relative path (same convention as WP_Font_Face_Resolver).
+        if (strpos($src, 'file:./') === 0) {
+            return get_theme_file_uri(substr($src, 7));
+        }
+        // Site-relative path.
+        if ($src[0] === '/' && strpos($src, '//') !== 0) {
+            return $src;
+        }
+        // Absolute URL: accepted only on the site's own hosts.
+        if (preg_match('#^(https?:)?//#i', $src)) {
+            $host  = strtolower((string) wp_parse_url($src, PHP_URL_HOST));
+            $hosts = [];
+            foreach ([home_url(), site_url(), content_url()] as $u) {
+                $h = wp_parse_url($u, PHP_URL_HOST);
+                if ($h) {
+                    $hosts[] = strtolower($h);
+                }
+            }
+            /**
+             * Hosts allowed to serve font files on the login page (e.g. the
+             * site's own static CDN). Third-party font services are excluded
+             * by default for privacy.
+             */
+            $hosts = (array) apply_filters('dblc_font_allowed_hosts', array_unique($hosts));
+            return ($host !== '' && in_array($host, $hosts, true)) ? $src : '';
+        }
+        return '';
+    }
+
+    /**
+     * CSS format() hint from the file extension.
+     */
+    private static function font_format($url) {
+        $ext = strtolower(pathinfo((string) wp_parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION));
+        $map = ['woff2' => 'woff2', 'woff' => 'woff', 'ttf' => 'truetype', 'otf' => 'opentype'];
+        return $map[$ext] ?? '';
+    }
+
+    /**
+     * Strip characters that could break out of a CSS declaration.
+     */
+    private static function css_value($value) {
+        return trim(str_replace(['{', '}', ';', '<', '>', '\\'], '', wp_strip_all_tags((string) $value)));
     }
 
     /**
@@ -491,15 +598,13 @@ final class DB_Login_Customizer {
 
         $css = '';
 
-        // Google Font from theme
+        // Theme font: @font-face from the theme's local files (privacy by
+        // design, no request to fonts.googleapis.com / fonts.gstatic.com).
         $font_family = '';
         if ($sync && !empty($theme['font_family'])) {
-            $font_family = $theme['font_family'];
-            // Load font
-            if (!empty($theme['font_url'])) {
-                echo '<link rel="preconnect" href="https://fonts.googleapis.com">';
-                echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>';
-                echo '<link rel="stylesheet" href="' . esc_url($theme['font_url']) . '">';
+            $font_family = self::css_value($theme['font_family']);
+            if (!empty($theme['font_face_css'])) {
+                $css .= $theme['font_face_css'];
             }
             $css .= "body.login, .login label, .login input, .login button { font-family: {$font_family}; }";
         }
