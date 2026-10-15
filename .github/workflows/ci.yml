@@ -23,7 +23,7 @@ jobs:
         # 7.4 = minimo dichiarato nel plugin header; 8.3 = versione corrente.
         php: [ '7.4', '8.3' ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
@@ -41,7 +41,7 @@ jobs:
     name: JS syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: node --check
         run: |
@@ -51,7 +51,7 @@ jobs:
     name: Nessuna richiesta a Google Fonts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Privacy by design: la pagina di login non deve contattare terzi.
       # I soli riferimenti ammessi sono i commenti che documentano il divieto.
